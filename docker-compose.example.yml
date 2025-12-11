@@ -1,4 +1,4 @@
-version: "2.4"
+version: "3.8"
 
 services:
   cfx-proxy:
@@ -7,12 +7,17 @@ services:
     environment:
       - LOCAL_ENDPOINT_PORT=30120
       # The IP to force the player to connect to (This proxy will hand over the connection to this IP)
-      - LOCAL_ENDPOINT_IP=123.456.789.0
+      - LOCAL_ENDPOINT_IP=192.0.2.1
       # Enter the server IP to fetch info from (Probably the origin server)
-      - REMOTE=234.567.890.1:30120
-#    image: docker.io/citizenfx/dummy-proxy
-    network_mode: "host"
+      - REMOTE=198.51.100.1:30120
     ports:
       - "30120:30120"
       - "80:80"
       - "30120:30120/udp"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/info.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

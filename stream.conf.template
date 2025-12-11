@@ -1,14 +1,19 @@
 stream {
-#        server {
-#                listen 30120;
-#                proxy_pass $REMOTE;
-#        }
-
-	limit_conn_zone "udp-stream" zone=servers:10m;
+	# Limit concurrent UDP connections per IP
+	limit_conn_zone $binary_remote_addr zone=udp_conn_limit:10m;
 
 	server {
-		limit_conn servers 100;
-		listen 30120 udp;
+		listen 30120 udp reuseport;
 		proxy_pass $REMOTE;
+
+		# Limit to 100 concurrent connections per IP
+		limit_conn udp_conn_limit 100;
+
+		# Timeouts for UDP proxy
+		proxy_timeout 30s;
+		proxy_connect_timeout 5s;
+
+		# Buffer sizes
+		proxy_buffer_size 4k;
 	}
 }
