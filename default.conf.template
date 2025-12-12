@@ -1,27 +1,49 @@
-proxy_cache_path /srv/cache levels=1:2 keys_zone=assets:48m max_size=20g;
+proxy_cache_path /srv/cache levels=1:2 keys_zone=assets:48m max_size=20g inactive=30d;
 log_format asset '$remote_addr - [$time_local] "$request" $status $body_bytes_sent $upstream_cache_status';
+
+# Upstream configuration with common proxy settings
+upstream fivem_backend {
+	server $REMOTE;
+	keepalive 32;
+}
 
 server {
 	listen 80;
-        listen 30120;
-		
-	resolver 8.8.8.8;
+	listen 30120;
+
+	# Use Docker's DNS resolver
+	resolver 127.0.0.11 valid=30s ipv6=off;
+	resolver_timeout 5s;
+
+	# Security limits
+	client_max_body_size 100m;
+	client_body_buffer_size 128k;
+	client_header_buffer_size 1k;
+	large_client_header_buffers 4 8k;
+
+	# Timeouts
+	proxy_connect_timeout 10s;
+	proxy_send_timeout 60s;
+	proxy_read_timeout 60s;
+	send_timeout 60s;
+
+	# Common proxy headers
+	proxy_http_version 1.1;
+	proxy_set_header X-Real-IP $remote_addr;
+	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+	proxy_set_header Connection "";
 
 	location / {
 		deny all;
-		proxy_pass http://$REMOTE;
-		proxy_http_version 1.1;
+		proxy_pass http://fivem_backend;
 		proxy_buffering off;
-		proxy_set_header X-Real-IP $remote_addr;
 	}
 
 	# Pass to client endpoint, this is the main connection endpoint where all the magic happens
 	location /client {
-		proxy_pass http://$REMOTE;
+		proxy_pass http://fivem_backend;
 		proxy_buffering off;
-		proxy_http_version 1.1;
-		proxy_set_header X-Real-IP $remote_addr;
-		
+
 		lua_need_request_body on;
 		header_filter_by_lua_block { ngx.header.content_length = nil }
 		# Override the getEndpoints call to return the correct endpoint (this can also be done with the sv_endpoints convar)
@@ -36,27 +58,27 @@ server {
 
 	# Cache the info.json for 10 minutes, should be sufficient for most use cases and saves marginally on performance
 	location /info.json {
-		proxy_pass http://$REMOTE;
-		proxy_http_version 1.1;
+		proxy_pass http://fivem_backend;
 		proxy_cache assets;
-		proxy_cache_valid 10m;
+		proxy_cache_valid 200 10m;
 		proxy_cache_key $request_uri$is_args$args;
-		proxy_set_header X-Real-IP $remote_addr;
-		add_header X-Cache $upstream_cache_status;
+		proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+		add_header X-Cache-Status $upstream_cache_status;
 	}
 
 	location /files/ {
-		# If you have a seperate file proxy uncomment this so files can't be requested here
+		# If you have a separate file proxy uncomment this so files can't be requested here
 		#deny all;
 		access_log /dev/stdout asset;
 		add_header X-Cache-Status $upstream_cache_status;
 		proxy_cache_lock on;
-		proxy_pass http://$REMOTE$request_uri$is_args$args;
+		proxy_cache_lock_timeout 30s;
+		proxy_pass http://fivem_backend$request_uri$is_args$args;
 		proxy_cache assets;
-		proxy_cache_valid 1y;
+		proxy_cache_valid 200 90d;
 		proxy_cache_key $request_uri$is_args$args;
-		proxy_http_version 1.1;
-		proxy_set_header X-Real-IP $remote_addr;
+		proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+		proxy_ignore_headers Cache-Control Expires;
 	}
 }
 
